@@ -1,0 +1,19 @@
+description "camlistored"
+author      "rob young"
+
+start on runlevel [2345]
+stop on runlevel [016]
+
+respawn
+respawn limit 5 10
+
+console log
+
+setuid camlistored
+setgid camlistored
+
+env USER=camlistored
+
+chdir /home/camlistored
+
+exec /usr/local/bin/camlistored -configfile=/home/camlistored/.config/camlistore/server-config.json

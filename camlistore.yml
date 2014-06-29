@@ -1,0 +1,62 @@
+---
+- hosts: camlistore
+  user: root
+  sudo_user: camlistored
+
+  tasks:
+    - name: update apt cache
+      apt: update_cache=yes cache_valid_time=86400
+
+    - name: install required packages
+      apt: name={{ item }} state=installed 
+      with_items:
+        - golang
+        - unzip
+
+    - name: download camlistore sources
+      get_url: url=https://github.com/bradfitz/camlistore/archive/0.7.zip dest=/tmp/0.7.zip
+
+    - name: unarchive the camlistore sources
+      unarchive: src=/tmp/0.7.zip dest=/usr/local/src/ creates=/usr/local/src/camlistore-0.7 copy=false
+
+    - name: build camlistore
+      command: go run make.go chdir=/usr/local/src/camlistore-0.7 creates=/usr/local/src/camlistore-0.7/bin/camput
+
+    - name: copy binaries into place
+      shell: cp /usr/local/src/camlistore-0.7/bin/cam* /usr/local/bin creates=/usr/local/bin/camput
+
+    - name: create camlistored user
+      user: name=camlistored
+
+    - name: create camlistore config directory
+      file: path=/home/camlistored/.config/camlistore state=directory recurse=true
+      sudo: True
+
+    - name: copy private key options up
+      copy: src=templates/gpg.in dest=/tmp/gpg.in
+
+    - name: generate private key
+      shell: gpg --batch --gen-key /tmp/gpg.in creates=/home/camlistored/.config/camlistore/identity-secring.gpg
+      sudo: True
+
+    - name: get private key identity
+      shell: gpg --no-default-keyring --secret-keyring /home/camlistored/.config/camlistore/identity-secring.gpg --list-secret-keys | grep 'sec ' | cut -c 13-20 
+      register: private_key_identity
+      sudo: True
+
+    - name: install camlistore server config
+      template: src=templates/server-config.json.j2 dest=/home/camlistored/.config/camlistore/server-config.json
+      sudo: True
+
+    - name: make camlistored data directory
+      file: path=/var/lib/camlistore state=directory
+      sudo: True
+    
+    - name: add upstart config
+      template: src=templates/upstart.j2 dest=/etc/init/camlistored.conf
+      notify:
+        - restart camlistored
+
+  handlers:
+    - name: restart camlistored
+      service: name=camlistored state=restarted
