@@ -2,8 +2,9 @@
   "auth": "userpass:{{ username }}:{{ password }}",
   "listen": ":3179",
   "https": true,
-  "identity": "{{ private_key_identity.stdout }}",
-  "identitySecretRing": "/home/camlistored/.config/camlistore/identity-secring.gpg",
+  "identity": "{{ camlistore_identity.stdout }}",
+  "identitySecretRing": "{{ config_dir }}/identity-secring.gpg",
   "blobPath": "/var/lib/camlistore/blobs",
+  "googlecloudstorage": "{{ cloudstorage }}",
   "kvIndexFile": "/var/lib/camlistore/camli-index.kvdb"
 }

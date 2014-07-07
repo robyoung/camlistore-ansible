@@ -1,9 +1,20 @@
 ---
 - hosts: camlistore
   user: root
-  sudo_user: camlistored
+  vars:
+    config_dir: /home/camlistored/.config/camlistore
+    server_config: "{{ config_dir }}/server-config.json"
 
   tasks:
+    - name: allow ssh and camlistore
+      ufw: rule=allow port={{ item }}
+      with_items:
+        - 22
+        - 3179
+
+    - name: deny everything and enable ufw
+      ufw: state=enabled policy=deny
+
     - name: update apt cache
       apt: update_cache=yes cache_valid_time=86400
 
@@ -11,49 +22,44 @@
       apt: name={{ item }} state=installed 
       with_items:
         - golang
-        - unzip
+        - git
 
     - name: download camlistore sources
-      get_url: url=https://github.com/bradfitz/camlistore/archive/0.7.zip dest=/tmp/0.7.zip
-
-    - name: unarchive the camlistore sources
-      unarchive: src=/tmp/0.7.zip dest=/usr/local/src/ creates=/usr/local/src/camlistore-0.7 copy=false
+      git: repo=https://camlistore.googlesource.com/camlistore dest=/usr/local/src/camlistore remote=origin version=master
+      register: camlistore_repo
 
     - name: build camlistore
-      command: go run make.go chdir=/usr/local/src/camlistore-0.7 creates=/usr/local/src/camlistore-0.7/bin/camput
+      command: go run make.go chdir=/usr/local/src/camlistore
+      when: camlistore_repo.changed
 
     - name: copy binaries into place
-      shell: cp /usr/local/src/camlistore-0.7/bin/cam* /usr/local/bin creates=/usr/local/bin/camput
+      shell: cp /usr/local/src/camlistore/bin/cam* /usr/local/bin
+      when: camlistore_repo.changed
 
     - name: create camlistored user
       user: name=camlistored
 
     - name: create camlistore config directory
-      file: path=/home/camlistored/.config/camlistore state=directory recurse=true
-      sudo: True
-
-    - name: copy private key options up
-      copy: src=templates/gpg.in dest=/tmp/gpg.in
-
-    - name: generate private key
-      shell: gpg --batch --gen-key /tmp/gpg.in creates=/home/camlistored/.config/camlistore/identity-secring.gpg
-      sudo: True
-
-    - name: get private key identity
-      shell: gpg --no-default-keyring --secret-keyring /home/camlistored/.config/camlistore/identity-secring.gpg --list-secret-keys | grep 'sec ' | cut -c 13-20 
-      register: private_key_identity
-      sudo: True
-
-    - name: install camlistore server config
-      template: src=templates/server-config.json.j2 dest=/home/camlistored/.config/camlistore/server-config.json
-      sudo: True
+      file: path={{ config_dir }} state=directory recurse=true
+      sudo: true
+      sudo_user: camlistored
 
     - name: make camlistored data directory
-      file: path=/var/lib/camlistore state=directory
-      sudo: True
+      file: path=/var/lib/camlistore state=directory owner=camlistored group=camlistored
     
     - name: add upstart config
       template: src=templates/upstart.j2 dest=/etc/init/camlistored.conf
+      notify:
+        - restart camlistored
+
+    - name: get camlistore identity
+      shell: "cat {{ server_config }} | grep -o 'identity\": \".*\"' | cut -c13-20"
+      register: camlistore_identity
+
+    - name: install camlistore server config
+      template: src=templates/server-config.json.j2 dest={{ server_config }}
+      sudo: true
+      sudo_user: camlistored
       notify:
         - restart camlistored
 
