@@ -23,6 +23,7 @@
       with_items:
         - golang
         - git
+        - htop
 
     - name: download camlistore sources
       git: repo=https://camlistore.googlesource.com/camlistore dest=/usr/local/src/camlistore remote=origin version=master
